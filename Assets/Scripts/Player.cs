@@ -8,6 +8,7 @@ public class Player
     //SETUP VARIABLES
     int playerIndex;
     List<Card> fullDeck = new List<Card>();
+    List<Card> fullDeckAtStart = new List<Card>();
     int deckSize = 30;
     int maxCardDuplicate = 2;
     int maxPV = 20;
@@ -24,27 +25,34 @@ public class Player
     int remainingMana;
 
     //Montecarlo variable
-    List<Card> fullDeckPreviousRound = new List<Card>();
-    int previousWonRound = 0;
-    int wonRound = 0;
+    Card removedCard;
+    Card addedCard;
+    List<Card> completeReferenceDeck = new List<Card>();
+    int bestWinRate = 0;
+    int currentWinRate = 0;
 
     //Properties
+    public List<Card> FullDeckAtStart => fullDeckAtStart;
+    public List<Card> CompleteReferenceDeck => completeReferenceDeck;
+    public List<Card> FullDeck { get { return fullDeck; } set { fullDeck = value; } }
     public List<Card> Board => board;
     public int PlayerIndex => playerIndex;
-    public int WonRound => wonRound;
+    public int CurrentWinRate { get { return currentWinRate; } set { currentWinRate = value; } }
     public int RemainingHP => remainingHP;
 
     public Player(int index)
     {
-        fullDeck = GenerateRandomDeck();
-        fullDeckPreviousRound = new List<Card>(fullDeck);
+        fullDeck = SetListHandler.GetFirstXCards(deckSize);
+        completeReferenceDeck = new List<Card>(fullDeck);
+        fullDeckAtStart = new List<Card>(fullDeck);
         playerIndex = index;
     }
 
     public Player(int index, List<Card> playerDeck)
     {
         fullDeck = playerDeck;
-        fullDeckPreviousRound = new List<Card>(fullDeck);
+        completeReferenceDeck = new List<Card>(fullDeck);
+        fullDeckAtStart = new List<Card>(fullDeck);
         playerIndex = index;
     }
 
@@ -134,7 +142,7 @@ public class Player
             else
             {
                 hand.Remove(cardToPlay);
-                board.Add(cardToPlay);
+                board.Add(new Card(cardToPlay));
                 remainingMana -= cardToPlay.Cost;
             }
         }
@@ -152,23 +160,83 @@ public class Player
         DrawCardFromDeckToHand();
     }
 
-    public void ApplyRandom()
+    public void ApplyRandom(bool trainOnOptimizedList)
     {
-        if (WonRound < previousWonRound)
+        if (CurrentWinRate < bestWinRate)
         {
             //reset to previous deck
-            fullDeck = new List<Card>(fullDeckPreviousRound);
+            fullDeck = new List<Card>(completeReferenceDeck);
+            if (!trainOnOptimizedList)
+            {
+                removedCard.AddToValueIndex(1);
+                addedCard.AddToValueIndex(-1);
+            }
+        }
+        else if (!trainOnOptimizedList)
+        {
+            removedCard?.AddToValueIndex(-1);
+            addedCard?.AddToValueIndex(1);
         }
 
-        fullDeckPreviousRound = new List<Card>(fullDeck);
+        completeReferenceDeck = new List<Card>(fullDeck);
 
         int indexToRemove = UnityEngine.Random.Range(0, fullDeck.Count - 1);
+
+        removedCard = fullDeck[indexToRemove];
 
         fullDeck.RemoveAt(indexToRemove);
 
         while (fullDeck.Count < deckSize)
         {
-            Card newCard = SetListHandler.GetRandomCard();
+            Card newCard = trainOnOptimizedList ? SetListHandler.GetRandomCardFromOptimizedSetList() : SetListHandler.GetRandomCard();
+
+            int cardAlreadyInDeckAmount = 0;
+
+            foreach (Card card in fullDeck)
+            {
+                if (card.Index == newCard.Index)
+                {
+                    cardAlreadyInDeckAmount++;
+
+                    if (maxCardDuplicate <= cardAlreadyInDeckAmount)
+                    {
+                        break;
+                    }
+                }
+            }
+            if (maxCardDuplicate <= cardAlreadyInDeckAmount)
+                continue;
+
+            addedCard = newCard;
+            fullDeck.Add(newCard);
+        }
+
+        if (bestWinRate <= CurrentWinRate)
+        {
+            bestWinRate = CurrentWinRate;
+        }
+
+        currentWinRate = 0;
+    }
+
+    public void OnWin()
+    {
+        currentWinRate++;
+    }
+
+    public void ResetWinRate()
+    {
+        currentWinRate = 0;
+        bestWinRate = 0;
+    }
+
+    public void GetRandomDeckFromSetList(bool useOptimizedSetList = false)
+    {
+        fullDeck = new List<Card>();
+
+        while (fullDeck.Count < deckSize)
+        {
+            Card newCard = useOptimizedSetList ? SetListHandler.GetRandomCardFromOptimizedSetList() : SetListHandler.GetRandomCard();
 
             int cardAlreadyInDeckAmount = 0;
 
@@ -189,17 +257,10 @@ public class Player
 
             fullDeck.Add(newCard);
         }
-
-        if (previousWonRound <= WonRound)
-        {
-            previousWonRound = WonRound;
-        }
-
-        wonRound = 0;
     }
 
-    public void OnWin()
+    public void KillCardOnBoard(Card killedCard)
     {
-        wonRound++;
+        board.Remove(killedCard);
     }
 }
