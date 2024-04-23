@@ -1,0 +1,10 @@
+How to test :
+- Open the project
+- Open TestScene
+- Hit play button
+- Select the gamemanager
+- Click the "Full Sequence" button
+- When it is done, Click the "Export Deck to CSV" button
+
+In your asset folder, you should have a .csv file with various informations.
+In Assets/Decks, you should find a Json of the deck that was just trained.

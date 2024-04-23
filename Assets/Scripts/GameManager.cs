@@ -6,6 +6,9 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 
+/// <summary>
+/// I am so sorry about the state of this script.
+/// </summary>
 public class GameManager : MonoBehaviour
 {
     [SerializeField] int playersAmount = 2;
@@ -22,11 +25,11 @@ public class GameManager : MonoBehaviour
     }
 
     [Button]
-    void GeneratePlayers()
+    void GeneratePlayers(bool useLowCostCards = true)
     {
         for (int i = 0; i < playersAmount; i++)
         {
-            players.Add(new Player(i));
+            players.Add(new Player(i, useLowCostCards));
         }
     }
 
@@ -167,6 +170,8 @@ public class GameManager : MonoBehaviour
     {
         GeneratePlayers();
 
+        output += "SequentialTraining\n";
+
         //train player 0, that player 1, and do it 10 times
         //this is about 10 000 000 games
         yield return StartCoroutine(SequentialTraining());
@@ -175,10 +180,12 @@ public class GameManager : MonoBehaviour
         SetListHandler.ComputeOptimizedSetList();
         GivePlayerOptimizedSetLists();
 
+        output += "TrainOnSameDeck\n";
         //Train player 0 against the deck it used last game for about 1 000 000 games using only the optimized Set List
         yield return StartCoroutine(TrainOnSameDeck());
+        output += "PlayWidthRandomDecks\n";
         yield return StartCoroutine(PlayWithRandomDeck(hasRandomDeckEachBatch: true));
-  //      yield return StartCoroutine(PlayWithRandomDeck(hasRandomDeckEachBatch: false));
+        //      yield return StartCoroutine(PlayWithRandomDeck(hasRandomDeckEachBatch: false));
 
         output = "\n\n\n" + output;
         //Debug & data printing
@@ -243,7 +250,7 @@ public class GameManager : MonoBehaviour
 
             players[1].FullDeck = player1ReferenceDeck;
             player1ReferenceDeck = players[0].FullDeck;
-            PlayGameBatch(gameBatchAmount, 0, true, true);
+            PlayGameBatch(gameBatchAmount, 0, true, true, true);
             //Debug.Log($"Batch {i} played");
             yield return null;
 
@@ -263,11 +270,15 @@ public class GameManager : MonoBehaviour
         {
             float t = Time.realtimeSinceStartup;
 
+            foreach (var player in players)
+            {
+                player.ResetWinRate();
+            }
+
             if (hasRandomDeckEachBatch)
                 players[1].GetRandomDeckFromSetList(false);
 
-            PlayGameBatch(gameBatchAmount, 0, true, false);
-            output += players[0].CurrentWinRate + "\n";
+            PlayGameBatch(gameBatchAmount, 0, true, false, true);
             //Debug.Log($"Batch {i} played");
             yield return null;
 
@@ -286,15 +297,18 @@ public class GameManager : MonoBehaviour
 
     IEnumerator SequentialTraining()
     {
-        int trainingPerPlayer = 70;
+        int trainingPerPlayer = 10;
         int cardsToChangePotentialPerTrining = 500;
         int gameBatchAmount = 700;
         for (int i = 0; i < trainingPerPlayer; i++)
         {
             float t = Time.realtimeSinceStartup;
+
             for (int j = 0; j < cardsToChangePotentialPerTrining; j++)
             {
-                PlayGameBatch(gameBatchAmount, i % 2, false, true);
+                foreach (var player in players)
+                    player.ResetWinRate();
+                PlayGameBatch(gameBatchAmount, i % 2, false, true, true);
                 //Debug.Log($"Batch {i} played");
                 yield return null;
             }
@@ -303,22 +317,50 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    int GetBoardAttackValue(List<Card> board)
+    [Button]
+    public void PlayCollectionAgainstRandomDeck()
     {
-        int attackValue = 0;
-
-        foreach (Card card in board)
-        {
-            attackValue += card.Attack;
-        }
-
-        return attackValue;
+        GeneratePlayers(false);
+        StartCoroutine(PlayCollectionAgainstRandomDeckRoutine());
     }
 
-    void PlayGameBatch(int gameAmount, int optimizedPlayerIndex, bool trainOnOptimizedList = false, bool trainDeck = false)
-    {
-        players[optimizedPlayerIndex].ResetWinRate();
 
+
+    IEnumerator PlayCollectionAgainstRandomDeckRoutine()
+    {
+        yield return StartCoroutine(PlayCollection(1000, 1000));
+
+        output = "\n\n\n" + output;
+        for (int i = 0; i < players[0].FullDeckAtStart.Count; i++)
+        {
+            output = players[0].FullDeck[i] + output;
+        }
+        output = "DeckAfter;i;ATK;DEF;Cost;Value;Powers\n" + output;
+
+        output = "\n\n\n" + output;
+        for (int i = 0; i < players[0].FullDeckAtStart.Count; i++)
+        {
+
+            output = players[0].FullDeckAtStart[i] + output;
+        }
+        output = "DeckAtStart;i;ATK;DEF;Cost;Value;Powers\n" + output;
+
+
+        PrintTOCSV();
+    }
+
+    IEnumerator PlayCollection(int collectionSize, int gameAmountPerBatch)
+    {
+        for (int i = 0; i < collectionSize; i++)
+        {
+            PlayGameBatch(gameAmountPerBatch, 0, false, true);
+            Debug.Log($"Playerd batch {i}");
+            yield return null;
+        }
+    }
+
+    void PlayGameBatch(int gameAmount, int optimizedPlayerIndex, bool trainOnOptimizedList = false, bool trainDeck = false, bool logToOutput = false)
+    {
         //float startExecutionTime = Time.realtimeSinceStartup;
 
         for (int i = 0; i < gameAmount / 2; i++)
@@ -335,8 +377,9 @@ public class GameManager : MonoBehaviour
         players.Reverse();
 
         float averageTurnsThisRound = (float)totalTurnThisRound / gameAmount;
+        if (logToOutput)
+            output += players[0].CurrentWinRate.ToString() + ";" + averageTurnsThisRound + "\n";
 
-        // output += players[0].CurrentWinRate.ToString() + ";" + averageTurnsThisRound + "\n";
         if (trainDeck)
             players[optimizedPlayerIndex].ApplyRandom(trainOnOptimizedList);
         totalTurnThisRound = 0;
@@ -350,7 +393,6 @@ public class GameManager : MonoBehaviour
         output = "\n\n\n" + output;
         for (int i = SetListHandler.cardMaxCost; i > 0; i--)
         {
-
             output = $"{i.ToString()};{players[0].FullDeckAtStart.Where(c => c.Cost == i).Count()};{players[0].CompleteReferenceDeck.Where(c => c.Cost == i).Count()}"
                 + "\n" + output;
         }

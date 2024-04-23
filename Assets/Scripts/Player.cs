@@ -40,9 +40,15 @@ public class Player
     public int CurrentWinRate { get { return currentWinRate; } set { currentWinRate = value; } }
     public int RemainingHP => remainingHP;
 
-    public Player(int index)
+    public Player(int index, bool useLowCostCards = true)
     {
-        fullDeck = SetListHandler.GetFirstXCards(deckSize);
+        if (useLowCostCards)
+            fullDeck = SetListHandler.GetFirstXCards(deckSize);
+        else
+            GetRandomDeckFromSetList(false);
+        {
+
+        }
         completeReferenceDeck = new List<Card>(fullDeck);
         fullDeckAtStart = new List<Card>(fullDeck);
         playerIndex = index;
